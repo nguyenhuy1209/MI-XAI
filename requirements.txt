@@ -1,0 +1,5 @@
+numpy
+--find-links https://download.pytorch.org/whl/torch_stable.html
+torch==1.12.0+cpu
+tqdm
+matplotlib
