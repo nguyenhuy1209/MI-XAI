@@ -38,8 +38,9 @@ def experiment(base_network, X, y,
     if plot == 'once':
         mi_history = [[] for _ in range(base_network.n_buffers)]
     
-    means = []
-    stds = []
+    layers_means = []
+    layers_stds = []
+
     for epoch in tqdm(range(epochs)):
         for network, solver in zip(network_copies, solvers):
             slice_ = np.random.permutation(range(len(X)))[:batch_size]
@@ -50,11 +51,17 @@ def experiment(base_network, X, y,
             pred_batch = network(X_batch)
 
             loss(pred_batch, y_batch).backward()
-            grad = network.layers[0].weight.grad.cpu().detach().numpy()
-            mean_grad = np.mean(np.absolute(grad))
-            std_grad = np.std(grad)
-            means.append(mean_grad)
-            stds.append(std_grad)
+            means = []
+            stds = []
+            for i in range(len(network.layers)):
+                if not network.buffer_or_not[i]:
+                    grad = network.layers[i].weight.grad.cpu().detach().numpy()
+                    mean_grad = np.mean(np.absolute(grad))
+                    std_grad = np.std(grad)
+                    means.append(mean_grad)
+                    stds.append(std_grad)
+            layers_means.append(means)
+            layers_stds.append(stds)
             solver.step()
         
         mi = mutual_information_for_network_family(infoplane, network_copies)
@@ -74,9 +81,24 @@ def experiment(base_network, X, y,
         # #     graph.plot(*zip(*history), marker="o", markersize=4)
         #     graph.scatter(*zip(*history), c=range(epochs), cmap='gnuplot')
         # plt.savefig(f"plot_layer.png", dpi=1000, format="png")
-        sgd_graph.plot(range(len(means)), means, linestyle="-")
-        sgd_graph.plot(range(len(stds)), stds, linestyle="--")
-        plt.savefig(f"sgd_plot.png", dpi=1000, format="png")
+        layers_means = list(zip(*layers_means))
+        layers_stds = list(zip(*layers_stds))
+        cmap = plt.cm.get_cmap('hsv', len(layers_means))
+
+        mean_plots = []
+        std_plots = []
+        for i, (layer_mean, layer_std) in enumerate(zip(layers_means, layers_stds)):
+            m, = sgd_graph.plot(range(len(layer_mean)), layer_mean, linestyle="-", c=cmap(i), label=f'layer_{i}_mean')
+            s, = sgd_graph.plot(range(len(layer_std)), layer_std, linestyle="--", c=cmap(i), label=f'layer_{i}_std')
+            mean_plots = mean_plots + [m]
+            std_plots = std_plots + [s]
+
+        sgd_fig.subplots_adjust(right=0.8)
+        first_legend = plt.legend(handles=mean_plots, bbox_to_anchor=[1.05, 0.8], loc='center left')
+        plt.gca().add_artist(first_legend)
+        plt.legend(handles=std_plots, bbox_to_anchor=[1.05, 0.4], loc='center left')
+        plt.savefig(f"sgd_plot_layer.png", dpi=1000, format="png")
+        plt.cla()
             
     return network_copies
 
@@ -98,4 +120,4 @@ if __name__ == '__main__':
     buffer_mask = [False, True, False, True, False, True, False, True, False, True, False, True]
     tishby_architecture = BufferedSequential(layers, buffer_mask)
     X, Y = gen_data()
-    result_nets = experiment(tishby_architecture, X, Y, epochs=10, network_copies=1, plot='once')
+    result_nets = experiment(tishby_architecture, X, Y, epochs=2, network_copies=1, plot='once')
