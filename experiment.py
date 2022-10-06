@@ -29,10 +29,17 @@ def experiment(base_network, X, y,
         graph = fig.add_subplot(111)
         graph.set_xlabel('I(X;T)')
         graph.set_ylabel('I(Y;T)')
+
+        sgd_fig = plt.figure(figsize=(12,5))
+        sgd_graph = sgd_fig.add_subplot(111)
+        sgd_graph.set_xlabel('# Epochs')
+        sgd_graph.set_ylabel('Normalized Mean and STD')
         
     if plot == 'once':
         mi_history = [[] for _ in range(base_network.n_buffers)]
     
+    means = []
+    stds = []
     for epoch in tqdm(range(epochs)):
         for network, solver in zip(network_copies, solvers):
             slice_ = np.random.permutation(range(len(X)))[:batch_size]
@@ -43,6 +50,11 @@ def experiment(base_network, X, y,
             pred_batch = network(X_batch)
 
             loss(pred_batch, y_batch).backward()
+            grad = network.layers[0].weight.grad.cpu().detach().numpy()
+            mean_grad = np.mean(np.absolute(grad))
+            std_grad = np.std(grad)
+            means.append(mean_grad)
+            stds.append(std_grad)
             solver.step()
         
         mi = mutual_information_for_network_family(infoplane, network_copies)
@@ -51,15 +63,20 @@ def experiment(base_network, X, y,
             graph.scatter(*zip(*mi), s=10, c=np.linspace(0, 1, base_network.n_buffers), alpha=epoch/epochs)
             # display.clear_output(wait=True)
             # display.display(fig)
-            fig.show()
+            # fig.show()
+            fig.savefig(f"plot_{epoch}.png", dpi=500, format="png")
         elif plot == 'once':
             for history, new_point in zip(mi_history, mi):
                 history.append(new_point)
         
     if plot == 'once':
-        for history in mi_history:
-            graph.plot(*zip(*history), marker="o", markersize=10)
-        plt.show()
+        # for i, history in enumerate(mi_history):
+        # #     graph.plot(*zip(*history), marker="o", markersize=4)
+        #     graph.scatter(*zip(*history), c=range(epochs), cmap='gnuplot')
+        # plt.savefig(f"plot_layer.png", dpi=1000, format="png")
+        sgd_graph.plot(range(len(means)), means, linestyle="-")
+        sgd_graph.plot(range(len(stds)), stds, linestyle="--")
+        plt.savefig(f"sgd_plot.png", dpi=1000, format="png")
             
     return network_copies
 
@@ -81,4 +98,4 @@ if __name__ == '__main__':
     buffer_mask = [False, True, False, True, False, True, False, True, False, True, False, True]
     tishby_architecture = BufferedSequential(layers, buffer_mask)
     X, Y = gen_data()
-    result_nets = experiment(tishby_architecture, X, Y * 2 - 1, epochs=1000, network_copies=1, plot='once')
+    result_nets = experiment(tishby_architecture, X, Y, epochs=10, network_copies=1, plot='once')
